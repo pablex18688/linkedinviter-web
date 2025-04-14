@@ -1,115 +1,84 @@
 import streamlit as st
-import time
-import os
-import json
-import datetime
 import openai
+import time
+import datetime
+import pandas as pd
 
-st.set_page_config(page_title="LinkedInviter PRO", layout="wide")
-st.title("🤖 LinkedInviter PRO – Simulación, Guardado y Ejecución de Campañas")
-
-# 🔐 Ingreso seguro de la clave API
-api_key_input = st.text_input("🔑 Clave API de OpenAI", type="password")
-if api_key_input:
-    openai.api_key = api_key_input
-else:
-    st.warning("⚠️ Debes ingresar tu clave API de OpenAI para continuar.")
-    st.stop()
-
-# 📁 Archivo para guardar campañas
-CAMPAIGN_FILE = "campanias_guardadas.json"
-if not os.path.exists(CAMPAIGN_FILE):
-    with open(CAMPAIGN_FILE, "w") as f:
-        json.dump({}, f)
-
-def guardar_campania(nombre, data):
-    with open(CAMPAIGN_FILE, "r") as f:
-        campañas = json.load(f)
-    campañas[nombre] = data
-    with open(CAMPAIGN_FILE, "w") as f:
-        json.dump(campañas, f)
-
-def cargar_campania(nombre):
-    with open(CAMPAIGN_FILE, "r") as f:
-        campañas = json.load(f)
-    return campañas.get(nombre, {})
-
-def listar_campanias():
-    with open(CAMPAIGN_FILE, "r") as f:
-        campañas = json.load(f)
-    return list(campañas.keys())
-
-# 📂 Sección de campañas
-st.subheader("📂 Campañas guardadas")
-modo = st.radio("¿Qué desea hacer?", ["Cargar campaña existente", "Crear nueva campaña"])
-
-if modo == "Cargar campaña existente":
-    nombre_sel = st.selectbox("Selecciona una campaña", listar_campanias())
-    if nombre_sel:
-        datos = cargar_campania(nombre_sel)
-        st.success(f"Campaña '{nombre_sel}' cargada correctamente")
-        st.session_state.update(datos)
-else:
-    nombre_nueva = st.text_input("📝 Nombre de la campaña nueva")
-    if nombre_nueva:
-        st.session_state['nombre_campania'] = nombre_nueva
-
-# ⚙️ Formulario de configuración
-st.subheader("⚙️ Configuración")
-email = st.text_input("📧 Correo de LinkedIn", value=st.session_state.get('email', ''))
-password = st.text_input("🔒 Contraseña", type="password", value=st.session_state.get('password', ''))
-palabra_clave = st.text_input("🔍 Palabra clave", value=st.session_state.get('palabra_clave', ''))
-ciudad = st.text_input("🌍 Ciudad", value=st.session_state.get('ciudad', ''))
-nivel_conexion = st.selectbox("🔗 Conexión", ["Todos", "1er grado", "2do grado", "3er grado"],
-                              index=["Todos", "1er grado", "2do grado", "3er grado"].index(st.session_state.get('nivel_conexion', 'Todos')))
-empresa = st.text_input("🏢 Empresa", value=st.session_state.get('empresa', ''))
-limite_dia = st.number_input("📤 Límite diario", min_value=1, max_value=50, value=st.session_state.get('limite_dia', 20))
-tipo_cta = st.selectbox("🔗 Tipo de CTA", ["WhatsApp", "URL personalizada"],
-                        index=["WhatsApp", "URL personalizada"].index(st.session_state.get('tipo_cta', 'WhatsApp')))
-link_cta = st.text_input("Enlace del CTA", value=st.session_state.get('link_cta', 'https://wa.me/message/Z3OXPSREGEEPB1'))
-activar_post = st.checkbox("📩 Mensaje post conexión con IA", value=st.session_state.get('activar_post', True))
-modo_simulacion = st.checkbox("🧪 Ejecutar en modo simulación (no enviar mensajes reales)", value=False)
-
-# 💾 Guardar campaña
-if modo == "Crear nueva campaña" and nombre_nueva:
-    if st.button("💾 Guardar campaña"):
-        datos_guardar = {
-            'email': email,
-            'password': password,
-            'palabra_clave': palabra_clave,
-            'ciudad': ciudad,
-            'nivel_conexion': nivel_conexion,
-            'empresa': empresa,
-            'limite_dia': limite_dia,
-            'tipo_cta': tipo_cta,
-            'link_cta': link_cta,
-            'activar_post': activar_post
-        }
-        guardar_campania(nombre_nueva, datos_guardar)
-        st.success(f"✅ Campaña '{nombre_nueva}' guardada exitosamente")
-
-# ✨ GPT con CTA
-@st.cache_data(show_spinner=False)
+# --- Función para generar el mensaje personalizado ---
 def generar_mensaje(nombre, cargo, ciudad, tipo="inv"):
-    prompt = f"Escribe un mensaje profesional y cálido para {tipo} a {nombre}, {cargo} en {ciudad}, sobre soluciones en SST."
+    prompt = f"""
+    Eres un experto en marketing profesional en LinkedIn.
+    Crea un mensaje corto, respetuoso y persuasivo para invitar a conectar a un profesional que se llama {nombre}, es {cargo} en {ciudad}.
+    Tipo de mensaje: {'Invitación de conexión' if tipo == 'inv' else 'Seguimiento después de conectar'}.
+    Usa un tono profesional, humano, y sin parecer automatizado.
+    """
+
     respuesta = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=[{"role": "user", "content": prompt}]
     )
-    mensaje = respuesta.choices[0].message.content.strip()
-    cta_final = f"\n\n👉 Si quieres hablar directamente, escríbeme aquí: {link_cta}"
-    return mensaje + cta_final
 
-# ▶️ Simulación o ejecución real
-if st.button("🚀 Ejecutar campaña"):
-    st.success("✅ Simulación iniciada" if modo_simulacion else "✅ Campaña real iniciada")
-    for i in range(min(limite_dia, 5)):
-        nombre = f"Contacto{i+1}"
-        cargo = "Gerente SST"
-        ciudadx = ciudad
-        mensaje = generar_mensaje(nombre, cargo, ciudadx, tipo="inv")
-        if modo_simulacion:
-            st.markdown(f"**[Simulado]** Mensaje a *{nombre}*:\n```{mensaje}```")
-        else:
-            st.markdown(f"**[Real]** Mensaje enviado a *{nombre}* (simulado en esta versión)")
+    return respuesta.choices[0].message['content']
 
+# --- INTERFAZ DE LA APP ---
+st.set_page_config(page_title="LinkedInviter Web", layout="centered")
+st.title("🚀 LinkedInviter Web")
+
+st.markdown("""
+Pega las URLs de LinkedIn (una por línea) y genera mensajes automáticos personalizados.
+""")
+
+# --- Input de la clave API ---
+api_key = st.text_input("🔑 Clave API de OpenAI", type="password")
+
+if api_key:
+    openai.api_key = api_key
+
+    # --- Filtros ---
+    nombre = st.text_input("👤 Nombre del contacto", "Carlos")
+    cargo = st.text_input("💼 Cargo del contacto", "Gerente de seguridad y salud en el trabajo")
+    ciudadx = st.text_input("🌐 Ciudad", "Bogotá")
+    tipo_conexion = st.selectbox("🔗 Conexión", ["Todos", "1er grado", "2do grado"])
+    empresa = st.text_input("🏢 Empresa")
+    limite = st.number_input("📅 Límite diario", min_value=1, max_value=100, value=20)
+    tipo_cta = st.selectbox("📎 Tipo de CTA", ["WhatsApp", "URL personalizada"])
+
+    if tipo_cta == "WhatsApp":
+        cta = "https://wa.me/message/Z3OXPSREGEEPB1"
+    else:
+        cta = st.text_input("🔗 Ingresa tu URL personalizada")
+
+    # --- Ejecutar generación ---
+    if st.button("✨ Generar mensaje"):
+        with st.spinner("Generando mensaje con IA..."):
+            try:
+                mensaje = generar_mensaje(nombre, cargo, ciudadx, tipo="inv")
+                mensaje_final = f"{mensaje}\n\nCTA: {cta}"
+                st.success("Mensaje generado con éxito:")
+                st.text_area("📝 Resultado", mensaje_final, height=200)
+
+                # Guardar en log de Excel
+                fecha = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                log = pd.DataFrame([{
+                    "Fecha": fecha,
+                    "Nombre": nombre,
+                    "Cargo": cargo,
+                    "Ciudad": ciudadx,
+                    "Empresa": empresa,
+                    "Mensaje": mensaje_final,
+                    "CTA": cta
+                }])
+
+                try:
+                    logs_antiguos = pd.read_csv("mensajes_log.csv")
+                    log_total = pd.concat([logs_antiguos, log], ignore_index=True)
+                except FileNotFoundError:
+                    log_total = log
+
+                log_total.to_csv("mensajes_log.csv", index=False)
+
+            except Exception as e:
+                st.error(f"❌ Error al generar mensaje: {e}")
+
+else:
+    st.warning("🔐 Por favor ingresa tu clave API de OpenAI para continuar.")
