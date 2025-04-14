@@ -3,7 +3,10 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
-from time import sleep
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 
 # Configuración de la página
 st.set_page_config(page_title="LinkedInviter Real", layout="centered")
@@ -22,39 +25,37 @@ if st.button("✅ Iniciar envíos reales"):
 
     # Configurar Chrome en modo visible
     options = Options()
-    options.add_experimental_option("detach", True)  # Deja el navegador abierto
-
-    driver = webdriver.Chrome(options=options)
+    options.add_experimental_option("detach", True)
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     driver.get("https://www.linkedin.com/login")
 
     # Login
-    sleep(2)
-    driver.find_element(By.ID, "username").send_keys(correo)
+    wait = WebDriverWait(driver, 15)
+    wait.until(EC.presence_of_element_located((By.ID, "username"))).send_keys(correo)
     driver.find_element(By.ID, "password").send_keys(clave)
     driver.find_element(By.ID, "password").send_keys(Keys.RETURN)
-    sleep(5)
+    wait.until(EC.presence_of_element_located((By.ID, "global-nav-search")))
 
     # Buscar
     query = f"{palabra_clave} {empresa if empresa else ''} {ciudad}"
     driver.get(f"https://www.linkedin.com/search/results/people/?keywords={query.replace(' ', '%20')}")
-    sleep(5)
+    wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'button[aria-label^="Conectar"]')))
 
     enviados = 0
-    perfiles = driver.find_elements(By.CSS_SELECTOR, 'button[aria-label^="Conectar"]')
+    botones = driver.find_elements(By.CSS_SELECTOR, 'button[aria-label^="Conectar"]')
 
-    for boton in perfiles:
+    for boton in botones:
         if enviados >= limite:
             break
         try:
             boton.click()
-            sleep(2)
-            enviar_btn = driver.find_element(By.XPATH, '//button[@aria-label="Enviar ahora"]')
-            enviar_btn.click()
+            wait.until(EC.presence_of_element_located((By.XPATH, '//button[@aria-label="Enviar ahora"]'))).click()
             st.write(f"✅ Invitación enviada #{enviados + 1}")
             enviados += 1
-            sleep(3)
+            WebDriverWait(driver, 5).until(EC.invisibility_of_element((By.XPATH, '//button[@aria-label="Enviar ahora"]')))
         except Exception as e:
             st.warning(f"⚠️ Error al enviar: {str(e)}")
             continue
 
     st.success(f"Proceso finalizado: {enviados} invitaciones enviadas.")
+
