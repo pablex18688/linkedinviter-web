@@ -1,84 +1,66 @@
 import streamlit as st
-import openai
-import time
-import datetime
 import pandas as pd
+import datetime
+from openai import OpenAI
 
-# --- Función para generar el mensaje personalizado ---
-def generar_mensaje(nombre, cargo, ciudad, tipo="inv"):
-    prompt = f"""
-    Eres un experto en marketing profesional en LinkedIn.
-    Crea un mensaje corto, respetuoso y persuasivo para invitar a conectar a un profesional que se llama {nombre}, es {cargo} en {ciudad}.
-    Tipo de mensaje: {'Invitación de conexión' if tipo == 'inv' else 'Seguimiento después de conectar'}.
-    Usa un tono profesional, humano, y sin parecer automatizado.
-    """
-
-    respuesta = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return respuesta.choices[0].message['content']
-
-# --- INTERFAZ DE LA APP ---
 st.set_page_config(page_title="LinkedInviter Web", layout="centered")
 st.title("🚀 LinkedInviter Web")
 
 st.markdown("""
-Pega las URLs de LinkedIn (una por línea) y genera mensajes automáticos personalizados.
+Pega las URLs de LinkedIn (una por línea), completa los datos, y generaremos mensajes automáticos con CTA personalizado.
 """)
 
-# --- Input de la clave API ---
+# Inputs clave
 api_key = st.text_input("🔑 Clave API de OpenAI", type="password")
+nombre_usuario = st.text_input("👤 Tu nombre")
+cargo = st.text_input("💼 Cargo")
+ciudad = st.text_input("🌐 Ciudad", value="bogota")
+empresa = st.text_input("🏢 Empresa")
+tipo_conexion = st.selectbox("🔗 Conexión", ["Todos", "1er grado", "2do grado", "3er grado"])
+limite_diario = st.number_input("📊 Límite diario", min_value=1, max_value=100, value=20)
+tipo_cta = st.selectbox("🔗 Tipo de CTA", ["WhatsApp", "URL personalizada"])
+cta_url = st.text_input("🔗 Enlace de CTA", placeholder="https://wa.me/... o https://tulanding.com")
 
-if api_key:
-    openai.api_key = api_key
+urls_input = st.text_area("🔗 Perfiles de LinkedIn (una URL por línea)")
 
-    # --- Filtros ---
-    nombre = st.text_input("👤 Nombre del contacto", "Carlos")
-    cargo = st.text_input("💼 Cargo del contacto", "Gerente de seguridad y salud en el trabajo")
-    ciudadx = st.text_input("🌐 Ciudad", "Bogotá")
-    tipo_conexion = st.selectbox("🔗 Conexión", ["Todos", "1er grado", "2do grado"])
-    empresa = st.text_input("🏢 Empresa")
-    limite = st.number_input("📅 Límite diario", min_value=1, max_value=100, value=20)
-    tipo_cta = st.selectbox("📎 Tipo de CTA", ["WhatsApp", "URL personalizada"])
+# Preparar cliente de OpenAI (v1.0+)
+def generar_mensaje(nombre, cargo, ciudad, tipo="inv"):
+    client = OpenAI(api_key=api_key)
+    prompt = f"""
+Eres {nombre}, {cargo} ubicado en {ciudad}. Vas a conectar con un perfil en LinkedIn como parte de una estrategia de networking y prospección comercial.
+Genera un mensaje corto y profesional de {tipo}itación de conexión, sin emojis, directo, amable, y agrega al final un llamado a la acción: "Si deseas saber más, escribe aquí {cta_url}".
+"""
+    respuesta = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return respuesta.choices[0].message.content
 
-    if tipo_cta == "WhatsApp":
-        cta = "https://wa.me/message/Z3OXPSREGEEPB1"
+# Botón para generar mensajes
+df = pd.DataFrame(columns=["Perfil", "Mensaje", "Fecha"])
+
+if st.button("✉️ Generar Mensajes"):
+    if not api_key:
+        st.error("Debes ingresar tu clave API de OpenAI.")
     else:
-        cta = st.text_input("🔗 Ingresa tu URL personalizada")
+        perfiles = [url.strip() for url in urls_input.split("\n") if url.strip()][:limite_diario]
+        mensajes_generados = []
 
-    # --- Ejecutar generación ---
-    if st.button("✨ Generar mensaje"):
-        with st.spinner("Generando mensaje con IA..."):
-            try:
-                mensaje = generar_mensaje(nombre, cargo, ciudadx, tipo="inv")
-                mensaje_final = f"{mensaje}\n\nCTA: {cta}"
-                st.success("Mensaje generado con éxito:")
-                st.text_area("📝 Resultado", mensaje_final, height=200)
-
-                # Guardar en log de Excel
-                fecha = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                log = pd.DataFrame([{
-                    "Fecha": fecha,
-                    "Nombre": nombre,
-                    "Cargo": cargo,
-                    "Ciudad": ciudadx,
-                    "Empresa": empresa,
-                    "Mensaje": mensaje_final,
-                    "CTA": cta
-                }])
-
+        with st.spinner("Generando mensajes..."):
+            for url in perfiles:
                 try:
-                    logs_antiguos = pd.read_csv("mensajes_log.csv")
-                    log_total = pd.concat([logs_antiguos, log], ignore_index=True)
-                except FileNotFoundError:
-                    log_total = log
+                    msg = generar_mensaje(nombre_usuario, cargo, ciudad)
+                    mensajes_generados.append((url, msg, datetime.date.today()))
+                    st.success(f"✅ Generado para {url}")
+                except Exception as e:
+                    st.error(f"❌ Error con {url}: {e}")
 
-                log_total.to_csv("mensajes_log.csv", index=False)
+        if mensajes_generados:
+            df = pd.DataFrame(mensajes_generados, columns=["Perfil", "Mensaje", "Fecha"])
+            archivo = f"campana_{datetime.date.today()}.xlsx"
+            df.to_excel(archivo, index=False)
+            st.download_button("📥 Descargar Excel", data=open(archivo, "rb"), file_name=archivo)
 
-            except Exception as e:
-                st.error(f"❌ Error al generar mensaje: {e}")
-
-else:
-    st.warning("🔐 Por favor ingresa tu clave API de OpenAI para continuar.")
+            st.markdown("---")
+            st.markdown("### 🗂️ Resultados")
+            st.dataframe(df, use_container_width=True)
